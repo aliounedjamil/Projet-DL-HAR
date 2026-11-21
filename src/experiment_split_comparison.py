@@ -57,3 +57,4 @@ print(f"  - Validation Accuracy : {acc_val_s * 100:.2f} %")
 print(f"  - Test Accuracy       : {acc_test_s * 100:.2f} %")
 print(f"  - Écart |Val - Test|  : {abs(acc_val_s - acc_test_s) * 100:.2f} % (Très proche de la réalité)")
 print("=" * 65)
+
