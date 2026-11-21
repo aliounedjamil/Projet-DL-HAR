@@ -131,3 +131,4 @@ with open(notebook_path, "w", encoding="utf-8") as f:
     json.dump(nb, f, indent=2, ensure_ascii=False)
 
 print(f"Notebook {notebook_path} mis à jour avec tous les outputs et graphiques intégrés !")
+

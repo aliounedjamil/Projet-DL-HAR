@@ -31,3 +31,4 @@ with zipfile.ZipFile(zip_filename, "w", zipfile.ZIP_DEFLATED) as zipf:
 
 print(f"\nFichier ZIP créé avec succès : {zip_filename}")
 print(f"Taille du ZIP : {os.path.getsize(zip_filename) / (1024*1024):.2f} Mo")
+

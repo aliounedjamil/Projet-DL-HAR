@@ -87,3 +87,4 @@ L'écart entre les deux moyennes est de **0,56%**, ce qui est supérieur aux éc
 
 ---
 *(La suite du rapport : Section 4 - Architectures profondes et régularisation, Section 5 - Évaluation finale sur test et matrice de confusion, et Section 6 - Interprétabilité t-SNE / UMAP, est rédigée par Madjiguène FALL)*
+
