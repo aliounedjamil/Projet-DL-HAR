@@ -20,3 +20,4 @@ Ce dossier contient les travaux et le notebook réalisés par **Alioune DIOP** :
    - Suivi des courbes d'apprentissage (Loss, Accuracy, Macro F1-score).
 5. **Étude de la variabilité des résultats** :
    - Entraînements répétés sur au moins 3 graines aléatoires (moyennes $\pm$ écarts-types).
+

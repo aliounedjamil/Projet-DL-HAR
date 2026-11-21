@@ -18,3 +18,4 @@ Ce dossier contient les travaux et le notebook réalisés par **Madjiguène FALL
    - Visualisation de la séparabilité de l'espace latent et corrélation avec la matrice de confusion.
 5. **Ouvertures (Bonus)** :
    - Automatisation de la recherche d'hyperparamètres ou analyse d'importance des variables.
+
