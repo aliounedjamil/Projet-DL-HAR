@@ -118,6 +118,30 @@ def build_pdf_report(output_pdf="reports/M2_DL_2026_DIOP_FALL.pdf"):
 
     story = []
 
+    # ---------- grandeurs dérivées des résultats (le texte s'appuie uniquement sur elles)
+    def sig(m1, s1, m2, s2):
+        # règle du projet : un écart n'est concluant que s'il dépasse la somme des écarts-types
+        return abs(m1 - m2) > s1 + s2
+    g = r1['graines']
+    f1_relu, f1_tanh = g['ReLU + Adam']['val_f1'], g['Tanh + Adam']['val_f1']
+    sweep = r1['balayage_lr']
+    best_f1_lr = {o: max(sweep['val_f1'][o]) * 100 for o in ('sgd', 'sgd_momentum', 'adam')}
+    regs = {r['Régularisation']: r for r in r2['regularisation']}
+    base_reg = regs['Sans régularisation']
+    d05 = regs['Dropout (p=0.5)']; d03 = regs['Dropout (p=0.3)']
+    gain05 = (d05['val_f1'][0] - base_reg['val_f1'][0]) * 100
+    tol05 = (d05['val_f1'][1] + base_reg['val_f1'][1]) * 100
+    gap0503 = (d05['val_f1'][0] - d03['val_f1'][0]) * 100
+    tol0503 = (d05['val_f1'][1] + d03['val_f1'][1]) * 100
+    archs = r2['architectures']
+    a64 = archs[0]
+    best_arch = max(archs, key=lambda a: a['val_f1'][0])
+    any_arch_sig = any(sig(a['val_f1'][0], a['val_f1'][1], a64['val_f1'][0], a64['val_f1'][1]) and a['val_f1'][0] > a64['val_f1'][0] for a in archs[1:])
+    mot_arch = 'Aucune' if not any_arch_sig else 'Presque aucune'
+    gaps = {a['Architecture']: (a['train_acc'][0] - a['val_acc'][0]) * 100 for a in archs}
+    cmx = r2['test_confusion']['matrice']
+    abl = r2['ablation']
+
     # ==================== EN-TÊTE ====================
     story.append(Paragraph("Étude Progressive des Réseaux de Neurones Multicouches sur le Jeu de Données HAR", title_style))
     story.append(Paragraph("Méthodologie Expérimentale, Régularisation, Analyse Critique et Interprétabilité Latente", subtitle_style))
@@ -129,12 +153,11 @@ def build_pdf_report(output_pdf="reports/M2_DL_2026_DIOP_FALL.pdf"):
         "<b>Résumé —</b> Ce travail présente une analyse progressive et rigoureuse de réseaux de neurones multicouches (MLP) pour la reconnaissance "
         "d'activités humaines à partir de signaux inertiels de smartphones (HAR Dataset, 6 activités, 561 caractéristiques expertes). "
         "En respectant un protocole sans fuite d'information (validation par volontaires entiers plutôt qu'aléatoire), nous établissons une référence "
-        "linéaire solide (95,28% sur le test). Nous étudions l'influence du pas d'apprentissage, des fonctions d'activation (Tanh surpasse ReLU à 95,43% en validation) "
-        "et de la variabilité multi-graines. L'extension en profondeur (jusqu'à 4 couches) révèle un risque accru de surapprentissage que seule une régularisation "
-        "stochastique forte (Dropout p=0,5) permet de juguler efficacement (96,48% en validation). Sur le jeu de test final sanctuarisé, un résultat remarquable apparaît : "
-        "la régression logistique linéaire (95,28%) surpasse les MLP (93,88% à 94,17%). L'analyse de confusion (19% d'ambiguïté assise/debout) et l'interprétabilité t-SNE "
-        "fournissent une explication physique limpide : les 561 variables expertes rendent les mouvements dynamiques presque linéairement séparables, "
-        "tandis que les postures statiques constituent l'unique frontière ambiguë en raison de l'invariance du vecteur gravitationnel mesuré au niveau du bassin."
+        "linéaire solide (95,28% sur le test). Nous réglons le pas d'apprentissage de chaque optimiseur, puis comparons activations, largeurs, profondeurs et régularisations sur 3 graines : "
+        "la plupart des écarts restent inférieurs à la variabilité, seul le Dropout (p = 0,3 et 0,5) apportant un gain significatif en validation. "
+        "Sur le jeu de test, évalué une seule fois, la régression logistique (95,28%) dépasse les MLP (93,88% à 94,17%), dont l'écart validation-test est "
+        "plus grand. Les erreurs se concentrent sur la paire assis/debout, deux postures immobiles que les capteurs distinguent mal, ce que confirme "
+        "la projection t-SNE de la dernière couche cachée."
     )
     abs_t = Table([[Paragraph(abs_text, abstract_style)]], colWidths=[520])
     abs_t.setStyle(TableStyle([
@@ -178,7 +201,7 @@ def build_pdf_report(output_pdf="reports/M2_DL_2026_DIOP_FALL.pdf"):
         "• <i>Normalisation :</i> L'inspection des 561 variables indique un minimum global de <b>-1,0000</b> et un maximum de <b>+1,0000</b>. "
         "Les variables étant déjà bornées dans [-1, 1], aucune mise à l'échelle supplémentaire n'est nécessaire.<br/>"
         "• <i>Exclusion de la colonne <code>subject</code> :</i> La colonne <code>subject</code> identifie l'individu. "
-        "<b>Elle ne doit absolument pas servir d'entrée au modèle</b> : son inclusion provoquerait une fuite de données (*data leakage*) où le modèle mémoriserait "
+        "<b>Elle ne doit absolument pas servir d'entrée au modèle</b> : son inclusion provoquerait une fuite de données (<i>data leakage</i>) où le modèle mémoriserait "
         "les personnes au lieu des signatures cinématiques, détruisant la généralisation sur les sujets de test inconnus.<br/>"
         "• <i>Encodage :</i> Les noms des activités sont transformés en entiers de 0 à 5 via <code>LabelEncoder</code> pour alimenter <code>nn.CrossEntropyLoss</code>.",
         body_style
@@ -223,27 +246,28 @@ def build_pdf_report(output_pdf="reports/M2_DL_2026_DIOP_FALL.pdf"):
         f"1. <i>Perte initiale théorique :</i> Pour C=6 classes équiprobables et poids aléatoires, L_0 = -ln(1/6) = ln(6) ≈ 1,7918. "
         f"La perte mesurée sur nos données est de <b>{r1['perte_initiale']['moyenne']:.4f}</b> (écart < 0,3%), confirmant l'initialisation saine.<br/>"
         f"2. <i>Surapprentissage mini-lot (Sanity Check) :</i> Sur 10 exemples, le modèle atteint <b>100,0%</b> de précision et une perte de "
-        f"{r1['sanity_check']['perte_finale']:.5f} en {r1['sanity_check']['iterations']} itérations, prouvant l'absence de bug de rétropropagation.",
+        f"{r1['sanity_check']['perte_finale']:.5f} en {r1['sanity_check']['iterations']} itérations, ce qui écarte les erreurs grossières (données, perte, rétropropagation).",
         body_style
     ))
     story.append(Paragraph(
         "<b>3.2 Réglage du pas d'apprentissage (Learning Rate) :</b> "
         "Le sujet impose de régler le pas d'apprentissage pour chaque algorithme. Sur une grille logarithmique "
         "[10^-4, 10^-3, 10^-2, 0.05, 0.1, 0.5] (Figure 1 gauche), les valeurs optimales retenues sur la validation sont : "
-        f"<b>lr = {r1['balayage_lr']['retenu']['sgd']}</b> pour SGD (Val F1: 92,76%), "
-        f"<b>lr = {r1['balayage_lr']['retenu']['sgd_momentum']}</b> pour SGD Momentum (Val F1: 95,88%), et "
-        f"<b>lr = {r1['balayage_lr']['retenu']['adam']}</b> pour Adam (Val F1: 95,65%).",
+        f"<b>lr = {sweep['retenu']['sgd']}</b> pour SGD (Val F1 : {best_f1_lr['sgd']:.2f}%), "
+        f"<b>lr = {sweep['retenu']['sgd_momentum']}</b> pour SGD + momentum ({best_f1_lr['sgd_momentum']:.2f}%) et "
+        f"<b>lr = {sweep['retenu']['adam']}</b> pour Adam ({best_f1_lr['adam']:.2f}%). Avec un momentum de 0,9, le pas effectif "
+        f"η/(1−μ) vaut 10 fois le pas : le pas retenu pour SGD + momentum est en limite de stabilité (le F1 s'effondre dès 0,1).",
         body_style
     ))
 
     # Tableau activations et optimiseurs
     act_data = [
         ["Configuration (MLP 64)", "Optimiseur & LR", "Val Loss", "Val Acc (%)", "Val Macro-F1 (%)", "Observations"],
-        ["ReLU", f"Adam (lr={r1['activations']['relu']['train_loss']:.3f}*)", f"{r1['activations']['relu']['val_loss']:.4f}", f"{r1['activations']['relu']['val_acc']*100:.2f} %", f"{r1['activations']['relu']['val_f1']*100:.2f} %", "Convergence rapide"],
-        ["Tanh", "Adam (lr=0.001)", f"{r1['activations']['tanh']['val_loss']:.4f}", f"{r1['activations']['tanh']['val_acc']*100:.2f} %", f"{r1['activations']['tanh']['val_f1']*100:.2f} %", "Meilleure symétrie autour de 0"],
-        ["Sigmoid", "Adam (lr=0.001)", f"{r1['activations']['sigmoid']['val_loss']:.4f}", f"{r1['activations']['sigmoid']['val_acc']*100:.2f} %", f"{r1['activations']['sigmoid']['val_f1']*100:.2f} %", "Saturation des gradients (inférieur)"],
-        ["ReLU", f"SGD (lr={r1['optimiseurs']['sgd']['lr']})", f"{r1['optimiseurs']['sgd']['val_loss']:.4f}", f"{r1['optimiseurs']['sgd']['val_acc']*100:.2f} %", f"{r1['optimiseurs']['sgd']['val_f1']*100:.2f} %", "Sous-optimal sans moment"],
-        ["ReLU", f"SGD+Mom (lr={r1['optimiseurs']['sgd_momentum']['lr']})", f"{r1['optimiseurs']['sgd_momentum']['val_loss']:.4f}", f"{r1['optimiseurs']['sgd_momentum']['val_acc']*100:.2f} %", f"{r1['optimiseurs']['sgd_momentum']['val_f1']*100:.2f} %", "Inertie efficace, bon score"]
+        ["ReLU", f"Adam (lr={sweep['retenu']['adam']})", f"{r1['activations']['relu']['val_loss']:.4f}", f"{r1['activations']['relu']['val_acc']*100:.2f} %", f"{r1['activations']['relu']['val_f1']*100:.2f} %", "Configuration de base"],
+        ["Tanh", "Adam (lr=0.001)", f"{r1['activations']['tanh']['val_loss']:.4f}", f"{r1['activations']['tanh']['val_acc']*100:.2f} %", f"{r1['activations']['tanh']['val_f1']*100:.2f} %", "Équivalente à ReLU"],
+        ["Sigmoid", "Adam (lr=0.001)", f"{r1['activations']['sigmoid']['val_loss']:.4f}", f"{r1['activations']['sigmoid']['val_acc']*100:.2f} %", f"{r1['activations']['sigmoid']['val_f1']*100:.2f} %", "Plus faible (saturation, σ' ≤ 1/4)"],
+        ["ReLU", f"SGD (lr={r1['optimiseurs']['sgd']['lr']})", f"{r1['optimiseurs']['sgd']['val_loss']:.4f}", f"{r1['optimiseurs']['sgd']['val_acc']*100:.2f} %", f"{r1['optimiseurs']['sgd']['val_f1']*100:.2f} %", "Proche d'Adam une fois le pas réglé"],
+        ["ReLU", f"SGD+Mom (lr={r1['optimiseurs']['sgd_momentum']['lr']})", f"{r1['optimiseurs']['sgd_momentum']['val_loss']:.4f}", f"{r1['optimiseurs']['sgd_momentum']['val_acc']*100:.2f} %", f"{r1['optimiseurs']['sgd_momentum']['val_f1']*100:.2f} %", "Moins bon ici : pas effectif élevé"]
     ]
     t_act = Table(act_data, colWidths=[85, 95, 55, 65, 75, 145])
     t_act.setStyle(TableStyle([
@@ -257,7 +281,7 @@ def build_pdf_report(output_pdf="reports/M2_DL_2026_DIOP_FALL.pdf"):
         ('BOTTOMPADDING', (0,0), (-1,-1), 2), ('TOPPADDING', (0,0), (-1,-1), 2),
     ]))
     story.append(t_act)
-    story.append(Paragraph("<b>Table 2 :</b> Comparaison des activations et optimiseurs sur l'architecture 1 couche cachée (64 neurones).", caption_style))
+    story.append(Paragraph("<b>Table 2 :</b> Activations et optimiseurs, MLP à 1 couche cachée (64 neurones), graine 42, 25 époques.", caption_style))
 
     # Variabilité graines
     g_relu = r1['graines']['ReLU + Adam']['val_acc']
@@ -265,8 +289,9 @@ def build_pdf_report(output_pdf="reports/M2_DL_2026_DIOP_FALL.pdf"):
     story.append(Paragraph(
         f"<b>3.3 Variabilité sur 3 graines (Partie 2.3) :</b> Répéter l'entraînement sur seeds [42, 123, 999] donne :<br/>"
         f"• <i>ReLU + Adam :</i> {g_relu[0]*100:.2f}% ± {g_relu[1]*100:.2f}% | <i>Tanh + Adam :</i> {g_tanh[0]*100:.2f}% ± {g_tanh[1]*100:.2f}%. "
-        f"L'écart moyen entre Tanh et ReLU (+0,08%) est inférieur aux écarts-types (0,54% à 0,86%). "
-        f"<b>Conclusion scientifique :</b> l'avantage de Tanh sur ReLU n'est pas statistiquement significatif sur ce réseau simple ; les deux fonctions sont équivalentes en pratique.",
+        f"L'écart de F1 macro entre Tanh et ReLU ({(f1_tanh[0]-f1_relu[0])*100:+.2f} pt) est bien inférieur à la somme des écarts-types "
+        f"({(f1_tanh[1]+f1_relu[1])*100:.2f} pt) : <b>on ne peut pas conclure</b>, les deux activations sont équivalentes ici. "
+        f"Tanh + Adam est retenue pour la suite, sans que son avantage soit significatif ; aucun MLP à une couche ne dépasse la référence en validation.",
         body_style
     ))
 
@@ -295,7 +320,8 @@ def build_pdf_report(output_pdf="reports/M2_DL_2026_DIOP_FALL.pdf"):
         vf = a['val_f1'][0]*100
         tm = a['time'][0]
         gap = (a['train_acc'][0] - a['val_acc'][0]) * 100
-        dims = a['Architecture'].split('[')[-1].replace(']', '').replace('(ReLU)', '').replace('(Tanh)', '').strip()
+        nom = a['Architecture']
+        dims = nom.split('(')[1].split(')')[0] if nom.startswith('1 couche') else nom.split('[')[1].split(']')[0]
         arch_rows.append([a['Architecture'], dims, f"{p:,}", f"{tm:.1f}s", f"{va:.2f} ± {vs:.2f}", f"{vf:.2f} %", f"+{gap:.2f} pt"])
     
     t_arch = Table(arch_rows, colWidths=[130, 65, 55, 45, 80, 65, 80])
@@ -313,9 +339,11 @@ def build_pdf_report(output_pdf="reports/M2_DL_2026_DIOP_FALL.pdf"):
     story.append(Paragraph("<b>Table 3 :</b> Étude de la complexité architecturale (moyenne ± écart-type sur 3 graines aléatoires).", caption_style))
 
     story.append(Paragraph(
-        "<i>Analyse :</i> Passer de 64 à 128 neurones améliore la fidélité, mais approfondir le réseau au-delà de 2 couches sans régularisation "
-        "ne produit aucun gain de validation (95,56% à 3 couches vs 96,05% à 1 couche), alors que l'écart train-val s'accroît (+2,91 pt), "
-        "signalant un début manifeste d'overfitting.",
+        f"<i>Analyse :</i> {mot_arch} architecture plus large ou plus profonde ne dépasse le réseau à une couche de 64 neurones "
+        f"au-delà de la variabilité (meilleur F1 : {best_arch['Architecture']}, {best_arch['val_f1'][0]*100:.2f}%), alors que le nombre de paramètres est "
+        f"multiplié jusqu'à {max(a['Paramètres'] for a in archs)/a64['Paramètres']:.1f} et le temps d'entraînement augmente. L'écart apprentissage − validation "
+        f"passe de {gaps[a64['Architecture']]:.2f} pt (1 couche) à {max(gaps.values()):.2f} pt (maximum, {max(gaps, key=gaps.get)}) : la capacité supplémentaire "
+        f"sert surtout à mieux ajuster les volontaires d'apprentissage. L'early stopping limite cet effet sans régularisation explicite.",
         body_style
     ))
 
@@ -326,14 +354,19 @@ def build_pdf_report(output_pdf="reports/M2_DL_2026_DIOP_FALL.pdf"):
         body_style
     ))
 
-    reg_rows = [["Régularisation", "Val Loss", "Val Acc (%)", "Val F1 (%)", "Époque Arrêt", "Effet Principal"]]
+    reg_rows = [["Régularisation", "Val Loss", "Val Acc (%)", "Val F1 (%)", "Meilleure époque", "vs sans régul."]]
     for r in r2['regularisation']:
         lbl = r['Régularisation']
         vl = r['val_loss'][0]
         va, vs = r['val_acc'][0]*100, r['val_acc'][1]*100
         vf = r['val_f1'][0]*100
         ep = r['best_epoch'][0]
-        obs = "Overfitting" if "Sans" in lbl else ("Meilleure généralisation" if "0.5" in lbl else ("Bonne régularisation" if "0.3" in lbl else "Modéré"))
+        if "Sans" in lbl:
+            obs = "Référence"
+        elif sig(r['val_f1'][0], r['val_f1'][1], base_reg['val_f1'][0], base_reg['val_f1'][1]):
+            obs = "Gain significatif" if r['val_f1'][0] > base_reg['val_f1'][0] else "Dégradation significative"
+        else:
+            obs = "Écart non significatif"
         reg_rows.append([lbl, f"{vl:.4f}", f"{va:.2f} ± {vs:.2f}", f"{vf:.2f} %", f"{ep:.1f}", obs])
 
     t_reg = Table(reg_rows, colWidths=[150, 50, 80, 65, 65, 110])
@@ -351,9 +384,10 @@ def build_pdf_report(output_pdf="reports/M2_DL_2026_DIOP_FALL.pdf"):
     story.append(Paragraph("<b>Table 4 :</b> Comparaison des mécanismes de régularisation sur 3 couches (moyenne ± écart-type sur 3 graines).", caption_style))
 
     story.append(Paragraph(
-        "<i>Bilan régularisation :</i> <b>Dropout (p = 0.5)</b> remporte nettement la comparaison en atteignant la perte de validation la plus basse (0,0978) "
-        "et la meilleure précision (<b>96,48% ± 0,12%</b>). Son avantage sur le modèle non régularisé (+0,92 pt) dépasse largement la variabilité (0,12 pt) : "
-        "il est donc statistiquement significatif. Les deux configurations retenues pour l'évaluation finale sont <b>Dropout 0.5</b> et <b>Dropout 0.3</b>.",
+        f"<i>Bilan :</i> le <b>Dropout (p = 0,5)</b> obtient la perte de validation la plus basse ({d05['val_loss'][0]:.4f}) et le meilleur F1 "
+        f"({d05['val_f1'][0]*100:.2f}% ± {d05['val_f1'][1]*100:.2f}). Son gain sur le réseau non régularisé ({gain05:+.2f} pt) dépasse la somme des écarts-types "
+        f"({tol05:.2f} pt) : il est significatif. En revanche, son avance sur le Dropout 0,3 ({gap0503:+.2f} pt, pour {tol0503:.2f} pt de variabilité) ne l'est pas. "
+        f"La Batch Normalization seule dégrade les résultats sur ce petit jeu de données. Les deux configurations retenues sont <b>Dropout 0,5</b> et <b>Dropout 0,3</b>.",
         body_style
     ))
 
@@ -377,13 +411,14 @@ def build_pdf_report(output_pdf="reports/M2_DL_2026_DIOP_FALL.pdf"):
 
     test_rows = [
         ["Modèle Évalué", "Rôle / Description", "Val Acc (%)", "Test Acc (%)", "Test Macro-F1 (%)", "Écart |Val - Test|"],
-        ["Régression Logistique", "Baseline de référence (Partie 1)", f"{val_subj:.2f} %", f"{t_lr_acc:.2f} %", f"{t_lr_f1:.2f} %", f"{abs(val_subj-t_lr_acc):.2f} pt"],
+        ["Régression Logistique", "Référence — meilleur test", f"{val_subj:.2f} %", f"{t_lr_acc:.2f} %", f"{t_lr_f1:.2f} %", f"{abs(val_subj-t_lr_acc):.2f} pt"],
         ["Simple MLP 1 couche [64] (Tanh)", "Réseau simple retenu (Partie 2)", f"{r1['graines']['Tanh + Adam']['val_acc'][0]*100:.2f} %", f"{t_v1_acc:.2f} ± {t_v1_acc_s:.2f}", f"{t_v1_f1:.2f} ± {t_v1_f1_s:.2f}", f"{abs(r1['graines']['Tanh + Adam']['val_acc'][0]*100-t_v1_acc):.2f} pt"],
         ["Deep MLP 3 couches + Dropout 0.3", "Top 2 Régularisation (Partie 4)", f"{r2['test']['Dropout (p=0.3)']['val_acc'][0]*100:.2f} %", f"{t_v2_3_acc:.2f} ± {t_v2_3_s:.2f}", f"{r2['test']['Dropout (p=0.3)']['test_f1'][0]*100:.2f} %", f"{abs(r2['test']['Dropout (p=0.3)']['val_acc'][0]*100-t_v2_3_acc):.2f} pt"],
-        ["<b>Deep MLP 3 couches + Dropout 0.5</b>", "<b>Meilleure architecture globale</b>", f"<b>{r2['test']['Dropout (p=0.5)']['val_acc'][0]*100:.2f} %</b>", f"<b>{t_v2_5_acc:.2f} ± {t_v2_5_s:.2f}</b>", f"<b>{t_v2_5_f1:.2f} %</b>", f"<b>{abs(r2['test']['Dropout (p=0.5)']['val_acc'][0]*100-t_v2_5_acc):.2f} pt</b>"]
+        ["Deep MLP 3 couches + Dropout 0.5", "Meilleur réseau en validation", f"{r2['test']['Dropout (p=0.5)']['val_acc'][0]*100:.2f} %", f"{t_v2_5_acc:.2f} ± {t_v2_5_s:.2f}", f"{t_v2_5_f1:.2f} %", f"{abs(r2['test']['Dropout (p=0.5)']['val_acc'][0]*100-t_v2_5_acc):.2f} pt"]
     ]
     t_final = Table(test_rows, colWidths=[140, 110, 65, 75, 75, 55])
     t_final.setStyle(TableStyle([
+        ('FONTNAME', (0,1), (-1,1), 'Helvetica-Bold'),
         ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#2B6CB0")),
         ('TEXTCOLOR', (0,0), (-1,0), colors.white),
         ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
@@ -397,14 +432,13 @@ def build_pdf_report(output_pdf="reports/M2_DL_2026_DIOP_FALL.pdf"):
     story.append(Paragraph("<b>Table 5 :</b> Bilan final sur le jeu de test sanctuarisé (moyennes et écarts-types sur 3 graines).", caption_style))
 
     story.append(Paragraph(
-        "<b>5.2 Discussion critique essentielle : La Régression Logistique surpasse les réseaux de neurones sur le test :</b><br/>"
-        "Un résultat capital émerge de nos données : <b>la régression logistique linéaire (95,28%) bat à la fois le MLP 1 couche (93,88%) "
-        "et le MLP 3 couches profond (94,17%) sur le jeu de test !</b><br/>"
-        "<i>Comment l'expliquer scientifiquement ?</i> Loin d'être un échec, ce constat met en lumière la nature des données : "
-        "les 561 variables sont des caractéristiques expertes lissées (statistiques d'énergie, centroïdes spectraux, bandes FFT) conçues "
-        "pour séparer les activités de façon quasi-linéaire. Les réseaux de neurones, dotés d'une grande capacité de modélisation non-linéaire, "
-        "ont tendance à ajuster des corrélations complexes propres aux 17 sujets du train (sur-spécification inter-sujets). "
-        "La régression logistique, par sa rigidité linéaire, est insensible à ces idiosyncrasies et généralise donc remarquablement bien sur de nouveaux individus.",
+        "<b>5.2 Discussion : la régression logistique dépasse les MLP sur le test.</b> "
+        "La régression logistique (95,28%) dépasse le MLP à une couche (93,88%) et le meilleur MLP profond (94,17%), alors que ce dernier était le meilleur en validation.<br/>"
+        "<i>Interprétation.</i> Les 561 variables sont déjà des caractéristiques élaborées (statistiques temporelles et spectrales) : un modèle linéaire "
+        "sépare très bien les classes, et la couche cachée apporte peu. Les MLP, plus flexibles, ajustent aussi des particularités des 17 volontaires "
+        f"d'apprentissage : leur écart validation − test (1,5 à 2,6 pt) est nettement plus grand que celui de la régression logistique (0,7 pt). "
+        "Enfin, la validation ne compte que 4 volontaires : elle a surestimé les MLP, et l'écart-type de test du MLP à une couche (±1,30 pt) montre que "
+        "le classement dépend aussi de la graine. Ces explications restent des hypothèses ; une validation croisée par volontaires permettrait de les tester.",
         body_style
     ))
 
@@ -427,12 +461,11 @@ def build_pdf_report(output_pdf="reports/M2_DL_2026_DIOP_FALL.pdf"):
 
     story.append(Paragraph(
         "<b>5.3 Analyse physique des erreurs de capteurs :</b><br/>"
-        f"• <i>Position Allongée (LAYING) :</i> Détection parfaite à <b>100%</b> (537/537, F1: 0,999) car la gravité se projette orthogonalement à l'axe vertical du corps.<br/>"
-        f"• <i>Confusion Assis (SITTING) vs Debout (STANDING) :</i> <b>93 assis sont classés debout ({pct_sit:.1f}% d'erreur !)</b> et 20 debout sont classés assis. "
+        f"• <i>Position allongée (LAYING) :</i> {cmx[0][0]}/{sum(cmx[0])} fenêtres reconnues : l'orientation du téléphone par rapport à la gravité change complètement.<br/>"
+        f"• <i>Assis (SITTING) / debout (STANDING) :</i> <b>{cm_sit_stand} assis classés debout ({pct_sit:.1f}%)</b> et {cmx[2][1]} debout classés assis. "
         "<b>Explication physique des capteurs :</b> Dans ces deux postures, le sujet est immobile : l'accélération dynamique est nulle et la vitesse angulaire quasi-nulle. "
-        "Le téléphone placé à la ceinture ne mesure que le vecteur gravité vertical 1g. La seule nuance réside dans l'orientation du fémur (cuisse), "
-        "qui n'induit qu'une variation angulaire infime au niveau de la taille chez certains volontaires.<br/>"
-        f"• <i>Escaliers :</i> 34 descentes sont confondues avec des montées ({pct_down:.1f}%). La cadence de pas est très proche ; seule l'intensité verticale de décélération à l'impact les sépare.",
+        "Le téléphone à la ceinture mesure alors essentiellement la gravité, dont l'orientation diffère peu entre les deux postures (seule l'inclinaison du bassin change).<br/>"
+        f"• <i>Escaliers :</i> {cm_down_up} descentes sont classées en montées ({pct_down:.1f}%) : les deux mouvements ont une cadence et une périodicité proches.",
         body_style
     ))
 
@@ -443,8 +476,11 @@ def build_pdf_report(output_pdf="reports/M2_DL_2026_DIOP_FALL.pdf"):
         "Pour préserver le jeu de test, nous projetons les 1 298 exemples de validation en 2D avec t-SNE (perplexité 30) : "
         "d'abord sur les 561 caractéristiques d'entrée brutes, puis sur les activations de la dernière couche cachée (64 neurones) du meilleur réseau (Figure 3 gauche et centre).<br/>"
         f"• <i>Pureté k-NN :</i> Elle progresse de <b>{r2['tsne']['purete_knn']['entrées brutes']*100:.2f}%</b> dans l'espace brut à <b>{r2['tsne']['purete_knn']['couche cachée']*100:.2f}%</b> dans l'espace latent.<br/>"
-        "• <i>Structuration géométrique :</i> Dans l'espace brut, les activités dynamiques se mêlent et les postures statiques forment une masse floue. "
-        "Dans l'espace latent, le réseau a contracté chaque activité en un îlot homogène et bien séparé, le seul contact persistant étant précisément la frontière entre <i>Sitting</i> et <i>Standing</i>.",
+        "• <i>Lecture des figures :</i> dans l'espace brut, chaque activité dynamique est éclatée en plusieurs petits groupes (vraisemblablement un par volontaire "
+        "de validation) et SITTING / STANDING se recouvrent. Dans la couche cachée, chaque activité forme un groupe unique : le réseau a gommé une partie de la "
+        "variabilité entre personnes ; le contact principal restant est la frontière SITTING / STANDING, cohérente avec la matrice de confusion. "
+        "Les distances entre groupes et leurs tailles ne sont pas interprétables, et la figure varie avec la perplexité ; la pureté k-NN, calculée en dimension "
+        "d'origine, ne dépend pas de la projection.",
         body_style
     ))
 
@@ -461,28 +497,30 @@ def build_pdf_report(output_pdf="reports/M2_DL_2026_DIOP_FALL.pdf"):
     story.append(Paragraph(
         "<b>6.2 Étude d'ablation par famille de capteurs (Partie 7 - Bonus) :</b> "
         "En ré-entraînant le réseau sur des sous-familles de capteurs (Figure 3 droite) :<br/>"
-        f"• <i>Sans accélération gravitationnelle (pas de tGravity) :</i> La précision chute à <b>{r2['ablation'][1]['val_acc']*100:.2f}%</b>. La gravité est indispensable pour séparer les postures statiques.<br/>"
-        f"• <i>Sans gyroscope (accéléromètre seul, 348 vars) :</i> <b>{r2['ablation'][2]['val_acc']*100:.2f}%</b>. L'accéléromètre assure la majorité du signal, le gyroscope apporte +1,8 pt crucial pour la rotation.<br/>"
-        f"• <i>Domaine temporel seul ({r2['ablation'][3]['Variables']} vars) :</i> <b>{r2['ablation'][3]['val_acc']*100:.2f}%</b> vs <i>Domaine fréquentiel seul ({r2['ablation'][4]['Variables']} vars) :</i> <b>{r2['ablation'][4]['val_acc']*100:.2f}%</b> (-14,3 pt). Les statistiques temporelles brutes sont nettement plus discriminantes que les bandes FFT seules.",
+        f"• <i>Sans accélération gravitationnelle (pas de tGravity) :</i> La précision chute à <b>{r2['ablation'][1]['val_acc']*100:.2f}%</b>. La gravité aide à séparer les postures statiques.<br/>"
+        f"• <i>Sans gyroscope (accéléromètre seul, 348 vars) :</i> <b>{r2['ablation'][2]['val_acc']*100:.2f}%</b>. Retirer le gyroscope coûte {(abl[0]['val_acc']-abl[2]['val_acc'])*100:.1f} pt.<br/>"
+        f"• <i>Domaine temporel seul ({r2['ablation'][3]['Variables']} vars) :</i> <b>{r2['ablation'][3]['val_acc']*100:.2f}%</b> vs <i>Domaine fréquentiel seul ({r2['ablation'][4]['Variables']} vars) :</i> <b>{r2['ablation'][4]['val_acc']*100:.2f}%</b> ({(abl[4]['val_acc']-abl[3]['val_acc'])*100:+.1f} pt) : les variables temporelles portent l'essentiel de l'information. "
+        "Étude exploratoire sur une seule graine : seuls les grands écarts (domaine fréquentiel seul) sont interprétables.",
         body_style
     ))
 
     # ==================== 7. CONCLUSION & IA ====================
     story.append(Paragraph("7. Conclusion et Déclaration d'Usage des Outils d'IA", h1_style))
     story.append(Paragraph(
-        "<b>Conclusion :</b> Cette étude progressive démontre que la modélisation profonde sur signaux de capteurs requiert une méthodologie irréprochable. "
-        "Sur des données riches en caractéristiques expertes, un réseau plus profond ne surpasse pas mécaniquement un modèle linéaire simple, car il surapprend "
-        "la variabilité inter-sujets du jeu d'entraînement. La régularisation par Dropout (p=0,5) est déterminante pour contrôler cette variance. "
-        "Enfin, la matrice de confusion et l'espace latent t-SNE éclairent parfaitement les limites physiques intrinsèques des capteurs inertiels.",
+        "<b>Conclusion :</b> (1) La validation par volontaires est indispensable : le découpage aléatoire surestime la performance réelle. "
+        "(2) Sur ces 561 variables déjà élaborées, ajouter de la largeur ou de la profondeur n'apporte pas de gain significatif, et la régression logistique "
+        "reste le meilleur modèle sur le test. (3) Le Dropout est la seule régularisation au gain significatif en validation, gain qui ne se retrouve pas sur le test. "
+        "(4) Les erreurs restantes (assis/debout) relèvent d'une limite des capteurs plus que du modèle. Pistes : validation croisée par volontaires, "
+        "réseaux convolutifs sur les signaux bruts.",
         body_style
     ))
     
     # Déclaration IA demandée en 8.2 (sobre, exacte et cadrée)
     ai_box = (
         "<b>Déclaration d'usage des outils d'IA (Partie 8.2) :</b> Des assistants d'IA (Claude, Antigravity) ont été utilisés comme aide à la programmation : "
-        "génération de l'architecture initiale du code, restructuration modulaire des notebooks et mise en page du présent document ReportLab. "
-        "L'ensemble des expérimentations a été exécuté en local sur les données réelles du projet par le binôme, qui a vérifié tous les contrôles théoriques "
-        "(perte initiale, sanity check, découpage par sujet) et rédigé l'ensemble des analyses critiques et interprétations physiques à partir des résultats observés."
+        "génération et restructuration du code et des notebooks, aide à la rédaction et à la mise en page du rapport. Les expériences ont été exécutées sur nos "
+        "machines avec les données réelles ; nous avons vérifié les contrôles (perte initiale, surapprentissage d'un mini-lot, découpage par volontaire, "
+        "cohérence validation/test) et relu chaque analyse au regard des résultats obtenus."
     )
     t_ai = Table([[Paragraph(ai_box, abstract_style)]], colWidths=[520])
     t_ai.setStyle(TableStyle([
