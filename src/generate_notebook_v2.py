@@ -309,3 +309,4 @@ Visualisation comparative :
     print(f"Notebook V2 prêt pour Madjiguène généré dans : {out_path}")
 
 create_v2_notebook()
+
