@@ -6,7 +6,7 @@ zip_paths = [
     "M2_DL_2026_DIOP_FALL.zip"
 ]
 
-include_dirs = ["src", "notebooks", "reports", ".vscode"]
+include_dirs = ["src", "notebooks", "reports"]
 include_files = ["README.md", "requirements.txt", ".gitignore"]
 
 for zip_filename in zip_paths:
