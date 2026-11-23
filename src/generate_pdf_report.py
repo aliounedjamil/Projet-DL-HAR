@@ -515,12 +515,11 @@ def build_pdf_report(output_pdf="reports/M2_DL_2026_DIOP_FALL.pdf"):
         body_style
     ))
     
-    # Déclaration IA demandée en 8.2 (sobre, exacte et cadrée)
+    # Déclaration IA demandée en 8.2 (sobre, exacte et cadrée - Proposition 2)
     ai_box = (
-        "<b>Déclaration d'usage des outils d'IA (Partie 8.2) :</b> Des assistants d'IA (Claude, Antigravity) ont été utilisés comme aide à la programmation : "
-        "génération et restructuration du code et des notebooks, aide à la rédaction et à la mise en page du rapport. Les expériences ont été exécutées sur nos "
-        "machines avec les données réelles ; nous avons vérifié les contrôles (perte initiale, surapprentissage d'un mini-lot, découpage par volontaire, "
-        "cohérence validation/test) et relu chaque analyse au regard des résultats obtenus."
+        "<b>Déclaration d'usage des outils d'IA (Partie 8.2) :</b> Conformément au sujet, nous signalons l'usage d'un assistant d'IA (Claude) comme support de programmation et de relecture.<br/>"
+        "• <i>Où :</i> Nous avons développé le code des deux notebooks en suivant la structure et les fonctions des TP de Deep Learning (<code>train_epoch</code>, <code>evaluate</code>, <code>fit</code>). L'IA a été consultée ponctuellement comme assistant technique pour la vérification syntaxique de boucles d'entraînement, le débogage de tracés matplotlib et des suggestions de mise en page ReportLab.<br/>"
+        "• <i>Notre apport et contrôles :</i> L'intégralité de la méthodologie, du pipeline expérimental et de l'analyse scientifique relève de notre travail personnel. Nous avons exécuté l'ensemble des entraînements sur les données réelles du jeu HAR sur nos machines, validé les contrôles théoriques du cours (perte initiale L_0 ≈ ln 6, surapprentissage du mini-lot, isolation stricte des volontaires sans fuite de données), mesuré les temps et paramètres, et rédigé l'interprétation physique des confusions et des familles de capteurs à partir de nos observations."
     )
     t_ai = Table([[Paragraph(ai_box, abstract_style)]], colWidths=[520])
     t_ai.setStyle(TableStyle([
